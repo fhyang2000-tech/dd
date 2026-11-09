@@ -1,0 +1,8 @@
+# 작업 규칙
+
+- 결과물은 **항상 HTML 파일 하나**(`parkciel-1904-hq.html`). CDN·importmap·외부 JS/CSS/이미지 금지 — three.js, 텍스처, 가구 모델(GLB)까지 전부 파일 안에 내장.
+  - three.js는 `window.__LIB` 블록(r170 + 쓰는 addon만, esbuild로 묶음)에 들어 있음. addon을 더 쓰면 같은 방식으로 다시 묶어서 그 블록을 교체.
+  - 앱 코드(`<script type="module">`)는 압축하지 말고 읽을 수 있게 유지.
+- **아이폰 Safari·Chrome 자동 대응** 유지: 안전영역(`env(safe-area-inset-*)`), `(pointer: coarse)`로 터치 판별(UA 판별 금지), 폰 자동 화질(`mobile`), 핀치 확대·두 번 탭 걷기, 세로 화면 화각 확대. 확대 금지(`user-scalable=no`)는 쓰지 않음.
+- 화면 좌우반전 없음 (실제 집 방향 = 모델 좌표 그대로).
+- 바닥색(영림 199 PWE1500-2)은 바꾸지 않음.
