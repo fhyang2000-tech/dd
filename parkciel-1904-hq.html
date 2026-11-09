@@ -43,7 +43,7 @@ body.panel-open #panel{transform:none}#panel-close{float:right}
   <h3>공간</h3><div id="rooms" class="row"></div>
   <h3>추천 시점</h3><div id="presets" class="row"></div>
   <h3>그래픽 품질</h3><select id="sel-quality" aria-label="그래픽 품질"></select><p id="quality-desc" class="muted"></p>
-  <h3>바닥 · 영림 199 단색</h3><div id="yl"></div><p class="muted">색값은 화면용 근사치예요. 실제 영림 199 샘플에 맞춰 바꾸면 바로 바닥에 반영되고 이 브라우저에 저장돼요.</p>
+  <h3>바닥 · 영림 199 (실제 사진 기준 혼합 톤)</h3><div id="yl"></div><p class="muted">실제 바닥 사진에서 뽑은 평균 톤이에요. 판재마다 7가지 톤이 섞이고 산결 무늬가 들어가요. 이 색을 바꾸면 전체 톤이 같이 움직이고, 이 브라우저에 저장돼요.</p>
   <h3>배치</h3><div class="row"><button id="btn-reset" type="button">기본 배치로</button></div>
   <p class="muted">가구를 누르면 제품 정보·옮기기·돌리기가 나와요. 옮긴 배치는 이 브라우저에 저장돼요.<br>WASD/방향키 걷기 · Shift 빠르게 · 드래그 둘러보기 · 휠 확대 · 더블클릭 그 자리로 걷기</p>
   <p class="muted">가구 3D 모델: 이케아 실제 치수로 Blender에서 만든 리마스터 모델(쇠데르함 소파 · 리사보 식탁 · 비클레뷔 한지 스탠드 · 베벨스타드 침대 등)을 압축해 넣었어요.</p>
@@ -6954,12 +6954,15 @@ const LOOK = {
 };
 const YL = [
   { key: 'pw971', no: '207', code: 'PW971-1', hex: '#B08A64', note: '색 확인 필요' },
-  { key: 'pwe1500', no: '199', code: 'PWE1500-2', hex: '#8E6B4E', note: '판매처 표기: 브라운 우드' },
+  { key: 'pwe1500', no: '199', code: 'PWE1500-2', hex: '#7f6e62', note: '실제 바닥 사진 기준 평균 톤 · 판재마다 7가지 톤 혼합' },
   { key: 'pw961', no: '174', code: 'PW961-1', hex: '#C4A47E', note: '판매처 표기: 우드 내추럴' },
 ];
   const YL_W = [0, 1, 0];   // 요청: 영림 199 PWE1500-2 단색 (판재마다 결·밝기만 살짝 다르게)
-try { const sv = JSON.parse(store.get('pc1904-ylmix') || '{}') || {}; for (const y of YL) if (/^#[0-9a-f]{6}$/i.test(sv[y.key] || '')) y.hex = sv[y.key]; } catch (e) { /* ignore */ }
-const ylGrad = () => YL[1].hex;   // 영림 199 단색
+try { const sv = JSON.parse(store.get('pc1904-ylmix2') || '{}') || {}; for (const y of YL) if (/^#[0-9a-f]{6}$/i.test(sv[y.key] || '')) y.hex = sv[y.key]; } catch (e) { /* ignore */ }
+// 사진에서 뽑은 판재 톤 (평균 톤 대비 R,G,B 배율, 비중): 어두운 그레이브라운 ~ 밝은 그레이지 + 웜 브라운
+const FLOOR_TONES = [[.77, .75, .75, 2], [.85, .84, .86, 3], [.93, .9, .89, 3], [1.03, .98, .93, 3], [1.07, 1.08, 1.09, 2], [1.15, 1.17, 1.2, 1], [.98, .9, .85, 2]];
+const FLOOR_REP = [2.76, 2.76];   // 판재 ≈ 17cm × 1.4m (바닥 UV = 집 전체 실측 좌표, buildHouse에서 다시 매김)
+const ylGrad = () => { const b = [1, 3, 5].map(i => parseInt(YL[1].hex.slice(i, i + 2), 16)); return 'linear-gradient(90deg,' + FLOOR_TONES.map(t => `rgb(${b.map((v, i) => Math.round(Math.min(255, v * t[i]))).join(',')})`).join(',') + ')'; };
 
 // ------------------------------------------------------------------ textures
 function canvasTex(src, scale, srgb = true) {
@@ -6987,33 +6990,74 @@ function recolor(img, target, contrast) {
   x.putImageData(d, 0, 0); return c;
 }
 // 영림 199 단색: 2.76m 타일 = 판재 폭 172.5mm × 길이 1380mm, 줄마다 이음 위치 엇갈림, 결은 오크 사진에서 가져와 품번 색으로 칠함
-function mixFloor(imgB) {
-  const S = 2048, rows = 16, rh = S / rows, PL = S / 2;
-  const c = document.createElement('canvas'); c.width = S; c.height = S; const x = c.getContext('2d');
-  const hc = document.createElement('canvas'); hc.width = S; hc.height = S; const hx = hc.getContext('2d'); hx.fillStyle = '#fff'; hx.fillRect(0, 0, S, S);
-  const src = YL.map(y => recolor(imgB, [1, 3, 5].map(i => parseInt(y.hex.slice(i, i + 2), 16)), 1.0));
-  const R = W.rng(1904); let prevRow = [];
-  for (let row = 0; row < rows; row++) {
-    const off = Math.round((0.15 + R() * 0.7) * PL), y0 = row * rh, cur = [];
-    for (let k = 0; k < 3; k++) {
-      const x0 = off - PL + k * PL; let ci;
-      { const u = R(); ci = u < YL_W[0] ? 0 : u < YL_W[0] + YL_W[1] ? 1 : 2; }   // 비율 = YL_W (지금은 199 단색)
-      cur.push(ci);
-      const sy = Math.floor(R() * (1024 - rh / 2)), sx = Math.floor(R() * 512), f = 0.965 + R() * 0.07;
-      for (const dx of [0, S]) { const xx = x0 + dx; if (xx + PL <= 0 || xx >= S) continue;
-        x.save(); x.beginPath(); x.rect(xx, y0, PL, rh); x.clip(); x.filter = `brightness(${f})`; x.drawImage(src[ci], sx, sy, 512, rh / 2, xx, y0, PL, rh); x.restore(); }
-      x.fillStyle = 'rgba(40,28,18,0.22)'; hx.fillStyle = '#000';
-      for (const dx of [0, S]) { const ex = ((x0 + dx) % S + S) % S - 1; x.fillRect(ex, y0, 2, rh); hx.fillRect(ex, y0, 3, rh); }
-    }
-    prevRow = cur;
-    x.fillStyle = 'rgba(40,28,18,0.2)'; x.fillRect(0, y0, S, 2); x.fillStyle = 'rgba(255,248,236,0.08)'; x.fillRect(0, y0 + 2, S, 1);
-    hx.fillStyle = '#000'; hx.fillRect(0, y0 - 1, S, 3);
+function mixFloor() {
+  // 사진(실제 바닥) 기준: 판재마다 7가지 톤 혼합 + 판재 가운데 밝은 산결(아치형 무늬결) + 잔결. 결을 따라 광택(거칠기)·요철도 달라짐.
+  const S = TOUCH ? 1024 : 2048, k = S / 2048, rows = 16, rh = S / rows, PL = S / 2;
+  const mk = () => { const cv = document.createElement('canvas'); cv.width = cv.height = S; return [cv, cv.getContext('2d')]; };
+  const [c, x] = mk(), [hc, hx] = mk(), [rc, rx] = mk();
+  hx.fillStyle = '#fff'; hx.fillRect(0, 0, S, S); rx.fillStyle = 'rgb(150,150,150)'; rx.fillRect(0, 0, S, S);
+  const base = [1, 3, 5].map(i => parseInt(YL[1].hex.slice(i, i + 2), 16));
+  const tw = FLOOR_TONES.reduce((a, t) => a + t[3], 0), R = W.rng(1904);
+  const cl = v => Math.round(Math.max(0, Math.min(255, v)));
+  const rgba = (a, al) => `rgba(${a.map(cl).join(',')},${al})`;
+  const light = base.map(v => v * 1.42 + 22), dark = base.map(v => v * 0.52);
+  function plankParams() {
+    let u = R() * tw, t = FLOOR_TONES[0]; for (const q of FLOOR_TONES) { if ((u -= q[3]) <= 0) { t = q; break; } }
+    const j = 0.97 + R() * 0.06, tone = base.map((v, i) => v * t[i] * j);
+    const lines = []; for (let i = 0; i < 46; i++) lines.push([R(), R(), R(), R()]);
+    const bands = []; for (let i = 0; i < 11; i++) bands.push([R(), R(), R()]);
+    const ticks = []; for (let i = 0; i < 5; i++) ticks.push([R(), R(), R(), R()]);
+    const arcs = [], na = 1 + Math.floor(R() * 2.2); for (let i = 0; i < na; i++) arcs.push([R(), R(), R() < 0.5 ? -1 : 1, 7 + Math.floor(R() * 7), R(), R()]);
+    return { tone, lines, bands, arcs, ticks };
   }
-  // 결 방향 미세 요철: 알베도 밝기를 약하게 섞음
-  hx.globalAlpha = 0.25; hx.drawImage(c, 0, 0); hx.globalAlpha = 1;
-  // 판재 결 방향 90° 회전 (요청)
+  function arcPath(ctx, ax, cy, dir, w, len, j, off) {
+    ctx.beginPath();
+    for (let t = -1; t <= 1.0001; t += 0.05) { const px = ax + dir * (len * t * t + off) + Math.sin(t * 5 + j) * 2 * k, py = cy + t * w; if (t === -1) ctx.moveTo(px, py); else ctx.lineTo(px, py); }
+  }
+  function drawPlank(X, Y, P) {
+    for (const [ctx, kind] of [[x, 'c'], [hx, 'h'], [rx, 'r']]) {
+      ctx.save(); ctx.beginPath(); ctx.rect(X, Y, PL, rh); ctx.clip();
+      if (kind === 'c') { ctx.fillStyle = rgba(P.tone, 1); ctx.fillRect(X, Y, PL, rh);
+        for (const [a, b, cc] of P.bands) { ctx.fillStyle = rgba(cc < 0.55 ? dark : light, 0.05 + 0.12 * b); ctx.fillRect(X, Y + a * rh, PL, rh * (0.04 + 0.22 * b)); } }   // 판재 안 결 줄무늬 (짙고 옅은 띠)
+      for (const [a, b, cc, d] of P.lines) {   // 잔결
+        const yy = Y + a * rh, amp = (0.6 + 2.2 * d) * k, f = 0.002 + 0.006 * b, ph = cc * 6.28;
+        ctx.beginPath(); ctx.moveTo(X, yy); for (let q = 0; q <= PL; q += 24 * k) ctx.lineTo(X + q, yy + Math.sin(q / k * f + ph) * amp);
+        ctx.lineWidth = (0.6 + 1.0 * d) * k;
+        ctx.strokeStyle = kind === 'c' ? (cc < 0.6 ? rgba(dark, 0.08 + 0.14 * b) : rgba(light, 0.05 + 0.08 * b)) : kind === 'h' ? (cc < 0.6 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.08)') : (cc < 0.6 ? 'rgba(200,200,200,0.15)' : 'rgba(110,110,110,0.12)');
+        ctx.stroke();
+      }
+      for (const [a, b, cc, d] of P.ticks) {   // 결을 따라 줄지어 이어지는 작은 물결·눈 무늬
+        const yy = Y + (0.12 + 0.76 * a) * rh, per = (14 + 18 * b) * k, sz = (2.2 + 2.6 * d) * k, x1 = X + cc * PL * 0.5, x2 = x1 + (0.3 + 0.5 * d) * PL, dir = b < 0.5 ? -1 : 1;
+        ctx.beginPath();
+        for (let q = x1; q < x2; q += per * (0.75 + 0.5 * Math.abs(Math.sin(q * 0.37)))) { const h = sz * (0.6 + 0.4 * Math.sin(q * 0.11)); ctx.moveTo(q + dir * h * 1.6, yy - h); ctx.quadraticCurveTo(q - dir * h, yy, q + dir * h * 1.6, yy + h); }
+        ctx.lineWidth = 1.1 * k + 0.3;
+        ctx.strokeStyle = kind === 'c' ? rgba(light, 0.42) : kind === 'h' ? 'rgba(0,0,0,0.14)' : 'rgba(205,205,205,0.25)'; ctx.stroke();
+      }
+      for (const [a, b, dir, n, cy, wob] of P.arcs) {   // 산결: 겹겹이 열리는 아치
+        const ax = X + (0.05 + 0.7 * a) * PL, cyy = Y + (0.35 + 0.3 * cy) * rh, gap = (2.8 + 2.2 * b) * k, step = (34 + 46 * wob) * k;
+        for (let j = 0; j < n; j++) {
+          const w = (j + 1) * gap * (1 + 0.15 * Math.sin(j * 1.7 + a * 9)), len = (j + 1) * step, lw = (1.1 + 1.3 * b) * k * (j < 2 ? 1.3 : 1);
+          arcPath(ctx, ax, cyy, dir, w, len, j, 0); ctx.lineWidth = lw;
+          ctx.strokeStyle = kind === 'c' ? rgba(light, 0.2 + 0.28 * (1 - j / n)) : kind === 'h' ? 'rgba(0,0,0,0.18)' : 'rgba(205,205,205,0.28)'; ctx.stroke();
+          if (kind === 'c') { arcPath(ctx, ax, cyy, dir, w, len, j, 2.4 * k); ctx.lineWidth = lw * 0.6; ctx.strokeStyle = rgba(dark, 0.16); ctx.stroke(); }
+        }
+      }
+      ctx.restore();
+    }
+  }
+  for (let row = 0; row < rows; row++) {
+    const off = Math.round((0.15 + R() * 0.7) * PL), y0 = row * rh;
+    for (let q = 0; q < 3; q++) {
+      const x0 = off - PL + q * PL, P = plankParams();
+      for (const dx of [0, S]) { const xx = x0 + dx; if (xx + PL > 0 && xx < S) drawPlank(xx, y0, P); }
+      for (const dx of [0, S]) { const ex = ((x0 + dx) % S + S) % S - 1; x.fillStyle = 'rgba(35,26,22,0.16)'; x.fillRect(ex, y0, 2 * k + 0.5, rh); hx.fillStyle = '#000'; hx.fillRect(ex, y0, 3 * k + 0.5, rh); }
+    }
+    x.fillStyle = 'rgba(35,26,22,0.2)'; x.fillRect(0, y0, S, 2 * k + 0.5); x.fillStyle = 'rgba(255,248,236,0.07)'; x.fillRect(0, y0 + 2 * k, S, 1);
+    hx.fillStyle = '#000'; hx.fillRect(0, y0 - 1, S, 3 * k + 0.5);
+  }
+  hx.globalAlpha = 0.15; hx.drawImage(c, 0, 0); hx.globalAlpha = 1;
   const rot90 = cv => { const o = document.createElement('canvas'); o.width = cv.height; o.height = cv.width; const q = o.getContext('2d'); q.translate(o.width, 0); q.rotate(Math.PI / 2); q.drawImage(cv, 0, 0); return o; };
-  return { albedo: rot90(c), height: rot90(hc) };
+  return { albedo: rot90(c), height: rot90(hc), rough: rot90(rc) };
 }
 
 // ------------------------------------------------------------------ legacy stub renderer (geometry + material descriptors only)
@@ -7085,16 +7129,18 @@ function buildHouse(imgs) {
   for (const [k, v] of Object.entries(M.WALLS || {})) nameOf.set(v, 'WALL_' + k);
   applyLookToLegacy();
   // 바닥
-  const fl = mixFloor(imgs.floorB);
-  floorMat = new THREE.MeshPhysicalMaterial({ map: canvasTex(fl.albedo, [2.76, 2.76]), normalMap: canvasTex(normalFromHeight(fl.height, 3.0), [2.76, 2.76], false), roughness: 0.5, clearcoat: 0.18, clearcoatRoughness: 0.3 });
+  const fl = mixFloor();
+  floorMat = new THREE.MeshPhysicalMaterial({ map: canvasTex(fl.albedo, FLOOR_REP), normalMap: canvasTex(normalFromHeight(fl.height, 3.0), FLOOR_REP, false), roughnessMap: canvasTex(fl.rough, FLOOR_REP, false), roughness: 1, clearcoat: 0.12, clearcoatRoughness: 0.38 });
   floorMat.normalScale.set(0.6, 0.6); floorMat.userData.legacyName = 'FLOOR';
-  for (const [m, b] of stub.batches) { if (!b.p.length) continue; house.add(batchMesh(b, matFor(m))); }
+  for (const [m, b] of stub.batches) { if (!b.p.length) continue; const mesh = batchMesh(b, matFor(m));
+    if (mesh.material === floorMat) { const P = mesh.geometry.attributes.position, uv = mesh.geometry.attributes.uv; for (let i = 0; i < P.count; i++) uv.setXY(i, P.getX(i), P.getZ(i)); uv.needsUpdate = true; }   // 바닥: 방마다 따로였던 UV → 집 전체 실측 좌표 (판재가 방 경계에서 이어지고 비율도 정확)
+    house.add(mesh); }
   COLL = W.COLL.slice();
   ITEMS.init(stub, M);
 }
 function rebuildFloorTexture() {
-  const fl = mixFloor(imgB); const old = [floorMat.map, floorMat.normalMap];
-  floorMat.map = canvasTex(fl.albedo, [2.76, 2.76]); floorMat.normalMap = canvasTex(normalFromHeight(fl.height, 3.0), [2.76, 2.76], false); floorMat.needsUpdate = true;
+  const fl = mixFloor(); const old = [floorMat.map, floorMat.normalMap, floorMat.roughnessMap];
+  floorMat.map = canvasTex(fl.albedo, FLOOR_REP); floorMat.normalMap = canvasTex(normalFromHeight(fl.height, 3.0), FLOOR_REP, false); floorMat.roughnessMap = canvasTex(fl.rough, FLOOR_REP, false); floorMat.needsUpdate = true;
   for (const t of old) t && t.dispose();
 }
 
@@ -7400,7 +7446,7 @@ function buildUI() {
   $('#floor-sw').style.background = ylGrad();
   let ylT = 0;
   $('#yl').addEventListener('input', e => { const inp = e.target.closest('input[data-k]'); if (!inp) return; YL.find(v => v.key === inp.dataset.k).hex = inp.value;
-    store.set('pc1904-ylmix', JSON.stringify(Object.fromEntries(YL.map(v => [v.key, v.hex])))); $('#floor-sw').style.background = ylGrad();
+    store.set('pc1904-ylmix2', JSON.stringify(Object.fromEntries(YL.map(v => [v.key, v.hex])))); $('#floor-sw').style.background = ylGrad();
     clearTimeout(ylT); ylT = setTimeout(rebuildFloorTexture, 150); });
   document.body.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
